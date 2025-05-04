@@ -17,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark"> {/* Force dark mode */}
+    <html lang="en" className="dark" suppressHydrationWarning> {/* Force dark mode and suppress minor warnings if needed */}
       <body
         className={cn(
           "min-h-screen bg-background font-sans antialiased",
