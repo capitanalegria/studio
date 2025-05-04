@@ -182,7 +182,8 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
 
   // State for 3D interaction (zoom, rotation, pointer position)
   const [zoom, setZoom] = useState(5); // Initial distance
-  const [rotation, setRotation] = useState({ x: 0, y: 0 }); // We still store rotation state
+  // We no longer need local React state for rotation as Three.js manages it internally
+  // const [rotation, setRotation] = useState({ x: 0, y: 0 }); // REMOVED
   const [pointer3D, setPointer3D] = useState<{ x: number; y: number; z: number } | null>(null);
   const [currentCoords, setCurrentCoords] = useState<{ x: number; y: number; z: number } | null>(null); // Local state for display
 
@@ -203,6 +204,7 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
 
         // --- Camera ---
         const camera = new THREE.PerspectiveCamera(75, currentMountRef.clientWidth / currentMountRef.clientHeight, 0.1, 1000);
+        // Apply the current zoom state to the initial camera position
         camera.position.z = zoom;
         cameraRef.current = camera;
 
@@ -227,8 +229,7 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
         const cube = new THREE.Mesh(geometry, material);
         scene.add(cube);
         cubeRef.current = cube;
-        // Restore rotation from state if needed (e.g., on component re-mount)
-        cube.rotation.set(rotation.x, rotation.y, 0); // Apply initial rotation from state
+        // Restore rotation state IS NOT NEEDED anymore as Three.js keeps it between renders if objects aren't destroyed
 
 
         // --- Edges ---
@@ -237,7 +238,10 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
         const lineSegments = new THREE.LineSegments(edges, lineMaterial);
         scene.add(lineSegments);
         linesRef.current = lineSegments; // Store ref for lines
-        lineSegments.rotation.copy(cube.rotation); // Sync initial line rotation
+        // Sync line rotation with cube's current rotation if cube exists
+        if (cubeRef.current) {
+            lineSegments.quaternion.copy(cubeRef.current.quaternion);
+        }
 
 
         // --- Pointer Sphere ---
@@ -289,15 +293,12 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
                     'XYZ' // Use 'XYZ' order
                 ));
 
-            // Apply the rotation delta to the current quaternion
-            cube.quaternion.multiplyQuaternions(deltaRotationQuaternion, cube.quaternion);
-            linesRef.current.quaternion.copy(cube.quaternion); // Sync line rotation
+            // Apply the rotation delta to the current quaternion of both cube and lines
+            cubeRef.current.quaternion.multiplyQuaternions(deltaRotationQuaternion, cubeRef.current.quaternion);
+            linesRef.current.quaternion.copy(cubeRef.current.quaternion); // Sync line rotation
 
-
-            // Update state rotation based on the new quaternion
-            const euler = new THREE.Euler().setFromQuaternion(cube.quaternion, 'XYZ');
-            setRotation({ x: euler.x, y: euler.y }); // Update the React state
-
+            // No need to update React state for rotation anymore
+            // setRotation({ x: euler.x, y: euler.y }); // REMOVED
 
             previousMousePosition = { x: event.clientX, y: event.clientY };
         };
@@ -319,12 +320,12 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
 
         // --- Interaction (Mouse Wheel for Zoom) ---
         const onWheel = (event: WheelEvent) => {
-            if (!isEnabled) return; // Check if enabled
+            if (!isEnabled || !cameraRef.current) return; // Check if enabled and camera exists
             event.preventDefault();
             const zoomSpeed = 0.1; // Reduced sensitivity
-            const newZoom = Math.max(2, Math.min(15, camera.position.z + event.deltaY * zoomSpeed)); // Adjusted min/max zoom
-            setZoom(newZoom); // Update state
-            camera.position.z = newZoom; // Update camera position directly
+            const newZoom = Math.max(2, Math.min(15, cameraRef.current.position.z + event.deltaY * zoomSpeed)); // Adjusted min/max zoom
+            setZoom(newZoom); // Update state (still useful for potential persistence or other logic)
+            cameraRef.current.position.z = newZoom; // Update camera position directly
         };
 
          // --- Raycasting for Pointer ---
@@ -386,7 +387,13 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
         // --- Animation Loop ---
         const animate = () => {
             animationFrameId = requestAnimationFrame(animate);
-            // Add any continuous animations here (e.g., slight auto-rotation)
+            // NO automatic rotation here anymore
+            // if (cubeRef.current && linesRef.current && !isDragging) {
+            //     // Subtle rotation only when not dragging
+            //     cubeRef.current.rotation.y += 0.001;
+            //     linesRef.current.rotation.y = cubeRef.current.rotation.y;
+            // }
+
              if (rendererRef.current && sceneRef.current && cameraRef.current) {
                 rendererRef.current.render(sceneRef.current, cameraRef.current);
              }
@@ -461,17 +468,16 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
             linesRef.current = null; // Clean up lines ref
             pointerRef.current = null;
         };
-        // Removed setCoords from dependency array as it's not needed and caused potential issues.
-        // Added rotation and isEnabled to dependencies to correctly re-apply rotation if state changes.
-    }, [zoom, rotation, isEnabled]);
+    // Removed `rotation` from dependencies. Only depend on `zoom` (for initial setting) and `isEnabled`.
+    }, [zoom, isEnabled]);
 
 
    const resetView = () => {
         if (!isEnabled) return; // Only allow reset if enabled
         setZoom(5);
-        setRotation({ x: 0, y: 0 }); // Reset React state for rotation
+        // No need to reset local React rotation state anymore
 
-        // Reset Three.js object rotations directly
+        // Reset Three.js object rotations and camera position directly
          if (cubeRef.current) {
              cubeRef.current.rotation.set(0, 0, 0);
              cubeRef.current.quaternion.set(0, 0, 0, 1); // Reset quaternion
@@ -482,11 +488,11 @@ const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: numb
          }
 
         if (cameraRef.current) {
-            cameraRef.current.position.set(0, 0, 5); // Reset position
+            cameraRef.current.position.set(0, 0, 5); // Reset position to initial zoom state
             cameraRef.current.lookAt(0, 0, 0); // Ensure it looks at the center
             cameraRef.current.updateProjectionMatrix();
         }
-         // Force re-render if needed
+         // Force re-render (might not be strictly necessary but ensures update)
          if (rendererRef.current && sceneRef.current && cameraRef.current) {
             rendererRef.current.render(sceneRef.current, cameraRef.current);
         }
@@ -574,17 +580,21 @@ const LatentSpaceVisualizer = ({ isEnabled }: { isEnabled: boolean }) => { // Re
         const x = coords.x;
         const y = coords.y;
         const z = coords.z; // Use z if available
+        // TODO: Replace with actual image generation based on loaded .pkl data and coords
+        // const generatedImage = await generateImageFromModel(loadedPklData, x, y, z);
+        // For now, we continue using the placeholder service.
         const url = await getPlaceholderImage(x, y, z, imageDimensions);
         setImageUrl(url);
          // Dispatch success state
          const successEvent = new CustomEvent('latentImageUpdate', { detail: { imageUrl: url, isLoading: false, error: null, coords } });
          window.dispatchEvent(successEvent);
       } catch (err) {
-        console.error("Error fetching placeholder image:", err);
-        setError("Failed to load image.");
+        console.error("Error fetching/generating image:", err);
+        const errorMsg = err instanceof Error ? err.message : "Failed to load image.";
+        setError(errorMsg);
         setImageUrl(null); // Clear image on error
         // Dispatch error state
-        const errorEvent = new CustomEvent('latentImageUpdate', { detail: { imageUrl: null, isLoading: false, error: "Failed to load image.", coords } });
+        const errorEvent = new CustomEvent('latentImageUpdate', { detail: { imageUrl: null, isLoading: false, error: errorMsg, coords } });
         window.dispatchEvent(errorEvent);
       } finally {
         setIsLoading(false); // Ensure loading is set to false
