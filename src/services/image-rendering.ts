@@ -1,3 +1,4 @@
+
 /**
  * Represents the dimensions of an image.
  */
@@ -18,24 +19,28 @@ export interface ImageDimensions {
  *
  * @param x The x-coordinate in the latent space (-1 to 1).
  * @param y The y-coordinate in the latent space (-1 to 1).
+ * @param z The optional z-coordinate in the latent space (-1 to 1).
  * @param dimensions The desired dimensions of the image.
  * @returns A promise that resolves to a URL string pointing to a placeholder image.
  */
-export async function getPlaceholderImage(x: number, y: number, dimensions: ImageDimensions): Promise<string> {
-  // Map coordinates (-1 to 1) to a large range for image ID variation
-  // This is a simple mapping; a more sophisticated hash could be used.
-  const seedVariation = Math.floor(((x + 1) / 2) * 500 + ((y + 1) / 2) * 500); // Range 0-1000
+export async function getPlaceholderImage(
+    x: number,
+    y: number,
+    z: number | undefined,
+    dimensions: ImageDimensions
+): Promise<string> {
 
-  // Adding a small random element to prevent identical images for very close coords sometimes
   // Use a fixed seed based on coords for consistency during hover
-  const seed = `latent_${x.toFixed(4)}_${y.toFixed(4)}`; // Seed based on coords
+  // Include z in the seed if it's defined
+  const zString = z !== undefined ? `_${z.toFixed(4)}` : '';
+  const seed = `latent_${x.toFixed(4)}_${y.toFixed(4)}${zString}`;
 
 
   // Construct the URL for picsum.photos
   const url = `https://picsum.photos/seed/${seed}/${dimensions.width}/${dimensions.height}`;
 
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 150)); // 50-200ms delay
+  // Simulate network delay (slightly reduced for faster feedback)
+  await new Promise(resolve => setTimeout(resolve, 30 + Math.random() * 100)); // 30-130ms delay
 
   return url;
 }

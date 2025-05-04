@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
@@ -16,6 +17,8 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
   const [isHovering, setIsHovering] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [currentCoords, setCurrentCoords] = useState<{ x: number; y: number } | null>(null); // Local state for display
+
 
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current || !isHovering) return;
@@ -41,7 +44,8 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
     const x = Math.max(-1, Math.min(1, zoomedX));
     const y = Math.max(-1, Math.min(1, zoomedY)); // Invert Y if needed based on visualization convention
 
-    setCoords({ x, y });
+    setCurrentCoords({ x, y }); // Update local state for display
+    setCoords({ x, y }); // Update parent state for image generation
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -62,63 +66,87 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
     const handleMouseLeave = () => {
         setIsHovering(false);
         dragStartRef.current = null; // Stop panning if mouse leaves
+        setCurrentCoords(null); // Clear coords display when leaving
     };
      const handleDrag = (event: React.MouseEvent<HTMLDivElement>) => {
-        if (!dragStartRef.current) return;
+        if (!dragStartRef.current || !containerRef.current) return;
 
         const dx = event.clientX - dragStartRef.current.x;
         const dy = event.clientY - dragStartRef.current.y;
 
         // Update offset based on drag distance, scaled by zoom
         setOffset(prev => ({
-            x: prev.x - dx / (containerRef.current?.clientWidth ?? 500) / zoom,
-            y: prev.y - dy / (containerRef.current?.clientHeight ?? 500) / zoom
+            x: prev.x - dx / (containerRef.current!.clientWidth ?? 500) / zoom,
+            y: prev.y - dy / (containerRef.current!.clientHeight ?? 500) / zoom
         }));
 
         // Update drag start position for continuous dragging
         dragStartRef.current = { x: event.clientX, y: event.clientY };
+
+        // Update coords while dragging
+        handleMouseMove(event);
     };
 
   return (
-    <div
-        ref={containerRef}
-        className="relative w-full h-full aspect-square max-w-[500px] max-h-[500px] bg-secondary rounded-lg overflow-hidden cursor-crosshair latent-space-bg"
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={handleMouseLeave}
-        onMouseMove={isHovering ? handleMouseMove : undefined}
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseMoveCapture={dragStartRef.current ? handleDrag : undefined} // Use capture phase for dragging
-    >
-        {/* Placeholder for scaled distribution visualization */}
+    <div className="flex flex-col items-center w-full h-full">
         <div
-            className="absolute inset-0 transition-transform duration-200 ease-out"
-             style={{
-                 transform: `scale(${zoom}) translate(${offset.x * 50}%, ${offset.y * 50}%)`, // Adjust translation based on offset and zoom
-                 transformOrigin: 'center center', // Zoom from the center
-             }}
+            ref={containerRef}
+            className="relative w-full h-full aspect-square max-w-[500px] max-h-[500px] bg-secondary rounded-lg overflow-hidden cursor-crosshair latent-space-bg"
+            onMouseEnter={() => setIsHovering(true)}
+            onMouseLeave={handleMouseLeave}
+            onMouseMove={isHovering ? handleMouseMove : undefined}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseMoveCapture={dragStartRef.current ? handleDrag : undefined} // Use capture phase for dragging
         >
-           {/* Add visual elements for the distribution here if needed */}
-           {/* Example: A grid or points */}
-           <div className="absolute inset-0 grid grid-cols-10 grid-rows-10 opacity-10">
-                {[...Array(100)].map((_, i) => (
-                    <div key={i} className="border border-muted-foreground/50"></div>
-                ))}
+            {/* Placeholder for scaled distribution visualization */}
+            <div
+                className="absolute inset-0 transition-transform duration-100 ease-out pointer-events-none" // Faster transition, disable pointer events
+                 style={{
+                     transform: `scale(${zoom}) translate(${offset.x * 50}%, ${offset.y * 50}%)`, // Adjust translation based on offset and zoom
+                     transformOrigin: 'center center', // Zoom from the center
+                 }}
+            >
+               {/* Add visual elements for the distribution here if needed */}
+               {/* Example: A grid or points */}
+               <div className="absolute inset-0 grid grid-cols-10 grid-rows-10 opacity-10">
+                    {[...Array(100)].map((_, i) => (
+                        <div key={i} className="border border-muted-foreground/50"></div>
+                    ))}
+                </div>
+                 {/* Red Dot at the center (0,0) */}
+                <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-red-500 rounded-full transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+
+                 {/* Coordinate Axes */}
+                <div className="absolute inset-0 pointer-events-none">
+                    {/* X-axis */}
+                    <div className="absolute left-0 right-0 top-1/2 h-px bg-muted-foreground/30 transform -translate-y-1/2"></div>
+                    {/* Y-axis */}
+                    <div className="absolute top-0 bottom-0 left-1/2 w-px bg-muted-foreground/30 transform -translate-x-1/2"></div>
+                </div>
+            </div>
+
+            {/* Zoom Controls */}
+            <div className="absolute bottom-2 right-2 flex flex-col gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(10, z * 1.2))}>
+                    <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(0.1, z / 1.2))}>
+                    <ZoomOut className="h-4 w-4" />
+                </Button>
+                 <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}>
+                    <Maximize className="h-4 w-4" /> {/* Reset zoom/pan */}
+                </Button>
             </div>
         </div>
-
-        {/* Zoom Controls */}
-        <div className="absolute bottom-2 right-2 flex flex-col gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(10, z * 1.2))}>
-                <ZoomIn className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(0.1, z / 1.2))}>
-                <ZoomOut className="h-4 w-4" />
-            </Button>
-             <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}>
-                <Maximize className="h-4 w-4" /> {/* Reset zoom/pan */}
-            </Button>
+        {/* Display current coordinates */}
+        <div className="mt-2 text-xs text-muted-foreground font-mono h-4"> {/* Fixed height */}
+         {currentCoords && (
+             <>
+             X: {currentCoords.x.toFixed(3)}, Y: {currentCoords.y.toFixed(3)}
+             </>
+         )}
         </div>
     </div>
   );
@@ -139,34 +167,45 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
   const [zoom, setZoom] = useState(5); // Initial distance
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
   const [pointer3D, setPointer3D] = useState<{ x: number; y: number; z: number } | null>(null);
+  const [currentCoords, setCurrentCoords] = useState<{ x: number; y: number; z: number } | null>(null); // Local state for display
 
     useEffect(() => {
         if (typeof window === 'undefined' || !mountRef.current) return;
 
+        const currentMountRef = mountRef.current; // Capture ref value for cleanup
+        let animationFrameId: number;
+
         // --- Scene Setup ---
         const scene = new THREE.Scene();
         sceneRef.current = scene;
-        scene.background = new THREE.Color(0x212121); // Match background color
+        // Get computed background color
+        const computedStyle = getComputedStyle(currentMountRef);
+        const bgColor = computedStyle.backgroundColor || '#212121'; // Fallback
+        scene.background = new THREE.Color(bgColor);
+
 
         // --- Camera ---
-        const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, currentMountRef.clientWidth / currentMountRef.clientHeight, 0.1, 1000);
         camera.position.z = zoom;
         cameraRef.current = camera;
 
         // --- Renderer ---
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-        mountRef.current.appendChild(renderer.domElement);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); // Enable alpha for potentially transparent bg
+        renderer.setSize(currentMountRef.clientWidth, currentMountRef.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio); // Improve sharpness on high DPI screens
+        currentMountRef.appendChild(renderer.domElement);
         rendererRef.current = renderer;
+
 
         // --- Cube ---
         const geometry = new THREE.BoxGeometry(2, 2, 2); // Represents -1 to 1 range
         const material = new THREE.MeshStandardMaterial({
-            color: 0xdddddd, // Light gray cube
+            color: 0xcccccc, // Lighter gray cube
             transparent: true,
-            opacity: 0.3,
+            opacity: 0.15, // More transparent
             metalness: 0.1,
-            roughness: 0.6,
+            roughness: 0.7, // Slightly rougher
+            side: THREE.DoubleSide, // Render inside faces too
         });
         const cube = new THREE.Mesh(geometry, material);
         scene.add(cube);
@@ -174,28 +213,29 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
 
         // --- Edges ---
         const edges = new THREE.EdgesGeometry(geometry);
-        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x008080 }); // Teal edges
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x008080, linewidth: 1.5 }); // Teal edges, slightly thicker
         const lineSegments = new THREE.LineSegments(edges, lineMaterial);
         scene.add(lineSegments);
 
 
         // --- Pointer Sphere ---
-        const pointerGeo = new THREE.SphereGeometry(0.05, 16, 16);
-        const pointerMat = new THREE.MeshBasicMaterial({ color: 0x008080 }); // Teal pointer
+        const pointerGeo = new THREE.SphereGeometry(0.04, 16, 16); // Slightly smaller
+        const pointerMat = new THREE.MeshBasicMaterial({ color: 0x00FFFF }); // Cyan pointer for better visibility
         const pointer = new THREE.Mesh(pointerGeo, pointerMat);
         pointer.visible = false; // Initially hidden
         scene.add(pointer);
         pointerRef.current = pointer;
 
         // --- Lights ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Brighter ambient
         scene.add(ambientLight);
-        const pointLight = new THREE.PointLight(0xffffff, 0.8);
-        pointLight.position.set(5, 5, 5);
-        scene.add(pointLight);
-         const pointLight2 = new THREE.PointLight(0xffffff, 0.5);
-        pointLight2.position.set(-5, -5, -5);
-        scene.add(pointLight2);
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight1.position.set(5, 5, 5);
+        scene.add(dirLight1);
+        const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+        dirLight2.position.set(-5, -5, -5);
+        scene.add(dirLight2);
+
 
         // --- Interaction (Mouse Drag for Rotation) ---
         let isDragging = false;
@@ -204,6 +244,7 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
         const onMouseDown = (event: MouseEvent) => {
             isDragging = true;
             previousMousePosition = { x: event.clientX, y: event.clientY };
+            currentMountRef.style.cursor = 'grabbing';
         };
 
         const onMouseMove = (event: MouseEvent) => {
@@ -215,29 +256,49 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
             };
 
             const rotateSpeed = 0.005;
-            const newRotationY = rotation.y + deltaMove.x * rotateSpeed;
-            const newRotationX = rotation.x + deltaMove.y * rotateSpeed;
+             // Apply rotation relative to the current view
+            const deltaRotationQuaternion = new THREE.Quaternion()
+                .setFromEuler(new THREE.Euler(
+                    deltaMove.y * rotateSpeed,
+                    deltaMove.x * rotateSpeed,
+                    0,
+                    'XYZ' // Use 'XYZ' order
+                ));
 
-             setRotation({ x: newRotationX, y: newRotationY });
+            cube.quaternion.multiplyQuaternions(deltaRotationQuaternion, cube.quaternion);
+            lineSegments.quaternion.copy(cube.quaternion); // Sync line rotation
 
-            cubeRef.current.rotation.y = newRotationY;
-            cubeRef.current.rotation.x = newRotationX;
-            lineSegments.rotation.copy(cubeRef.current.rotation); // Sync line rotation
+            // Update state rotation (might need adjustment if using quaternions directly)
+            // For simplicity, we can still update Euler angles for state, though it might lead to gimbal lock issues visually
+            const euler = new THREE.Euler().setFromQuaternion(cube.quaternion, 'XYZ');
+            setRotation({ x: euler.x, y: euler.y });
+
 
             previousMousePosition = { x: event.clientX, y: event.clientY };
         };
 
         const onMouseUp = () => {
-            isDragging = false;
+            if (isDragging) {
+                isDragging = false;
+                currentMountRef.style.cursor = 'grab';
+            }
         };
+         const onMouseLeave = () => {
+             if (isDragging) {
+                 isDragging = false;
+                 currentMountRef.style.cursor = 'grab'; // Reset cursor even if dragging stops outside
+             }
+              if (pointerRef.current) pointerRef.current.visible = false;
+             setCurrentCoords(null); // Clear coords display
+         };
 
         // --- Interaction (Mouse Wheel for Zoom) ---
         const onWheel = (event: WheelEvent) => {
             event.preventDefault();
-            const zoomSpeed = 0.5;
-            const newZoom = Math.max(1, Math.min(20, zoom + event.deltaY * zoomSpeed * 0.1)); // Clamp zoom
-            setZoom(newZoom);
-            camera.position.z = newZoom;
+            const zoomSpeed = 0.1; // Reduced sensitivity
+            const newZoom = Math.max(2, Math.min(15, camera.position.z + event.deltaY * zoomSpeed)); // Adjusted min/max zoom
+            setZoom(newZoom); // Update state
+            camera.position.z = newZoom; // Update camera position directly
         };
 
          // --- Raycasting for Pointer ---
@@ -245,141 +306,197 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
         const mouse = new THREE.Vector2();
 
         const onPointerMove = (event: PointerEvent) => {
-             if (!mountRef.current || !camera || !cubeRef.current || !pointerRef.current) return;
+             if (!currentMountRef || !cameraRef.current || !cubeRef.current || !pointerRef.current || isDragging) {
+                 if(pointerRef.current) pointerRef.current.visible = false;
+                 setCurrentCoords(null); // Hide pointer and clear coords if dragging
+                 return
+             };
 
-             const rect = mountRef.current.getBoundingClientRect();
+             const rect = currentMountRef.getBoundingClientRect();
              // Calculate mouse position in normalized device coordinates (-1 to +1)
              mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
              mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
              // Update the picking ray with the camera and mouse position
-             raycaster.setFromCamera(mouse, camera);
+             raycaster.setFromCamera(mouse, cameraRef.current);
 
              // Calculate objects intersecting the picking ray
+             // Important: Raycast against the CUBE MESH, not the lines
              const intersects = raycaster.intersectObject(cubeRef.current);
 
              if (intersects.length > 0) {
-                 const intersectionPoint = intersects[0].point;
-                 // The cube's origin is (0,0,0), and it has size 2x2x2
-                 // So, the coordinates within the cube range from -1 to 1
+                 // Get the intersection point in world space
+                 const worldIntersectionPoint = intersects[0].point;
+
+                 // Transform the world intersection point to the cube's local space
+                 // This accounts for the cube's rotation
+                 const localIntersectionPoint = cubeRef.current.worldToLocal(worldIntersectionPoint.clone());
+
+
+                 // The cube's geometry origin is (0,0,0), and it has size 2x2x2 centered at origin.
+                 // So, the local coordinates directly correspond to the -1 to 1 range.
                  const coordsInCube = {
-                     x: Math.max(-1, Math.min(1, intersectionPoint.x)),
-                     y: Math.max(-1, Math.min(1, intersectionPoint.y)),
-                     z: Math.max(-1, Math.min(1, intersectionPoint.z)),
+                     x: Math.max(-1, Math.min(1, localIntersectionPoint.x)),
+                     y: Math.max(-1, Math.min(1, localIntersectionPoint.y)),
+                     z: Math.max(-1, Math.min(1, localIntersectionPoint.z)),
                  };
-                 setPointer3D(coordsInCube);
-                 setCoords(coordsInCube); // Update parent state
-                 pointerRef.current.position.copy(intersectionPoint);
+
+                 setCurrentCoords(coordsInCube); // Update local state for display
+                 setCoords(coordsInCube); // Update parent state for image generation
+
+                 // Position the pointer sphere at the world intersection point
+                 pointerRef.current.position.copy(worldIntersectionPoint);
                  pointerRef.current.visible = true;
              } else {
-                  setPointer3D(null);
-                 // Optionally reset coords or keep the last valid ones
+                  setCurrentCoords(null); // Clear local coords display
+                 // Optionally reset coords in parent or keep the last valid ones
                  // setCoords({x: 0, y: 0, z: 0}); // Example: Reset to center
                  if (pointerRef.current) pointerRef.current.visible = false;
              }
         };
 
-         const onPointerLeave = () => {
-             if (pointerRef.current) pointerRef.current.visible = false;
-             setPointer3D(null);
-             // Optionally reset coords
-         }
-
 
         // --- Animation Loop ---
         const animate = () => {
-            requestAnimationFrame(animate);
+            animationFrameId = requestAnimationFrame(animate);
             // Add any continuous animations here (e.g., slight auto-rotation)
-            renderer.render(scene, camera);
+             if (rendererRef.current && sceneRef.current && cameraRef.current) {
+                rendererRef.current.render(sceneRef.current, cameraRef.current);
+             }
         };
         animate();
 
         // --- Event Listeners ---
-        const currentMountRef = mountRef.current; // Capture ref value
         currentMountRef.addEventListener('mousedown', onMouseDown);
         currentMountRef.addEventListener('mousemove', onMouseMove);
-        currentMountRef.addEventListener('mouseup', onMouseUp);
-        currentMountRef.addEventListener('mouseleave', onMouseUp); // Stop dragging if mouse leaves
-        currentMountRef.addEventListener('wheel', onWheel);
+        window.addEventListener('mouseup', onMouseUp); // Listen on window to catch mouseup outside element
+        currentMountRef.addEventListener('mouseleave', onMouseLeave);
+        currentMountRef.addEventListener('wheel', onWheel, { passive: false }); // Explicitly not passive
         currentMountRef.addEventListener('pointermove', onPointerMove);
-        currentMountRef.addEventListener('pointerleave', onPointerLeave);
 
 
         // --- Resize Handling ---
         const handleResize = () => {
-            if (!renderer || !camera || !currentMountRef) return;
+            if (!rendererRef.current || !cameraRef.current || !currentMountRef) return;
             const width = currentMountRef.clientWidth;
             const height = currentMountRef.clientHeight;
-            renderer.setSize(width, height);
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
+            rendererRef.current.setSize(width, height);
+            cameraRef.current.aspect = width / height;
+            cameraRef.current.updateProjectionMatrix();
         };
         window.addEventListener('resize', handleResize);
+        // Initial resize call
+        handleResize();
 
         // --- Cleanup ---
         return () => {
+            cancelAnimationFrame(animationFrameId);
             window.removeEventListener('resize', handleResize);
+            window.removeEventListener('mouseup', onMouseUp); // Clean up window listener
             if (currentMountRef) {
                  currentMountRef.removeEventListener('mousedown', onMouseDown);
                 currentMountRef.removeEventListener('mousemove', onMouseMove);
-                currentMountRef.removeEventListener('mouseup', onMouseUp);
-                currentMountRef.removeEventListener('mouseleave', onMouseUp);
+                // currentMountRef.removeEventListener('mouseup', onMouseUp); // Removed as it's on window now
+                currentMountRef.removeEventListener('mouseleave', onMouseLeave);
                 currentMountRef.removeEventListener('wheel', onWheel);
                 currentMountRef.removeEventListener('pointermove', onPointerMove);
-                currentMountRef.removeEventListener('pointerleave', onPointerLeave);
+
 
                 // Remove renderer canvas
-                 while (currentMountRef.firstChild) {
-                     currentMountRef.removeChild(currentMountRef.firstChild);
+                 if (rendererRef.current?.domElement) {
+                    try {
+                         currentMountRef.removeChild(rendererRef.current.domElement);
+                    } catch (e) {
+                         console.warn("Could not remove canvas during cleanup:", e);
+                    }
                  }
             }
+             // Dispose Three.js objects
              if (rendererRef.current) {
                 rendererRef.current.dispose();
                 rendererRef.current = null;
             }
-            sceneRef.current = null;
+             if (sceneRef.current) {
+                // Dispose geometries, materials, textures in the scene
+                 sceneRef.current.traverse((object) => {
+                    if (object instanceof THREE.Mesh) {
+                        if (object.geometry) object.geometry.dispose();
+                        if (object.material) {
+                             if (Array.isArray(object.material)) {
+                                object.material.forEach(material => material.dispose());
+                             } else {
+                                object.material.dispose();
+                             }
+                        }
+                    }
+                 });
+                sceneRef.current = null;
+            }
             cameraRef.current = null;
             cubeRef.current = null;
             pointerRef.current = null;
         };
-    }, [zoom]); // Re-run effect if zoom changes to update camera position initially
+    }, [zoom, setCoords]); // Add setCoords dependency
+
 
    const resetView = () => {
         setZoom(5);
         setRotation({ x: 0, y: 0 });
-        if (cubeRef.current) {
+
+         if (cubeRef.current) {
             cubeRef.current.rotation.set(0, 0, 0);
+            cubeRef.current.quaternion.set(0, 0, 0, 1); // Reset quaternion as well
+
              // Find the line segments and reset its rotation too
             const lineSegments = sceneRef.current?.children.find(child => child instanceof THREE.LineSegments);
             if (lineSegments instanceof THREE.LineSegments) {
                 lineSegments.rotation.set(0, 0, 0);
+                 lineSegments.quaternion.set(0, 0, 0, 1);
             }
         }
         if (cameraRef.current) {
-            cameraRef.current.position.z = 5;
+            cameraRef.current.position.set(0, 0, 5); // Reset position
+            cameraRef.current.lookAt(0, 0, 0); // Ensure it looks at the center
+            cameraRef.current.updateProjectionMatrix();
+        }
+         // Force re-render if needed, though state updates should handle it
+         if (rendererRef.current && sceneRef.current && cameraRef.current) {
+            rendererRef.current.render(sceneRef.current, cameraRef.current);
         }
     };
 
   return (
-     <div className="relative w-full h-full aspect-square max-w-[500px] max-h-[500px] rounded-lg overflow-hidden cursor-grab active:cursor-grabbing">
-         <div ref={mountRef} className="w-full h-full" />
-         {/* Placeholder for Leap Motion status/controls */}
-         <div className="absolute top-2 left-2 bg-background/80 text-foreground text-xs px-2 py-1 rounded">
-             Leap Motion: Disconnected (Placeholder)
-         </div>
-          {/* Reset View Button */}
-         <div className="absolute bottom-2 right-2 flex flex-col gap-1">
-             <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={resetView}>
-                <RotateCcw className="h-4 w-4" />
-             </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(20, z + 1))}>
-                <ZoomOut className="h-4 w-4" /> {/* Zoom out = Increase distance */}
-            </Button>
-             <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(1, z - 1))}>
-                <ZoomIn className="h-4 w-4" /> {/* Zoom in = Decrease distance */}
-            </Button>
-         </div>
-     </div>
+    <div className="flex flex-col items-center w-full h-full">
+        <div className="relative w-full h-full aspect-square max-w-[500px] max-h-[500px] rounded-lg overflow-hidden cursor-grab bg-secondary">
+            <div ref={mountRef} className="w-full h-full" />
+            {/* Placeholder for Leap Motion status/controls */}
+            {/* <div className="absolute top-2 left-2 bg-background/80 text-foreground text-xs px-2 py-1 rounded">
+                Leap Motion: Disconnected (Placeholder)
+            </div> */}
+            {/* Reset View Button */}
+            <div className="absolute bottom-2 right-2 flex flex-col gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={resetView} title="Reset View">
+                    <RotateCcw className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(15, z + 1))} title="Zoom Out">
+                    <ZoomOut className="h-4 w-4" /> {/* Zoom out = Increase distance */}
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(2, z - 1))} title="Zoom In">
+                    <ZoomIn className="h-4 w-4" /> {/* Zoom in = Decrease distance */}
+                </Button>
+            </div>
+        </div>
+        {/* Display current coordinates */}
+        <div className="mt-2 text-xs text-muted-foreground font-mono h-4"> {/* Fixed height */}
+         {currentCoords && (
+                <>
+                 X: {currentCoords.x.toFixed(3)},
+                 Y: {currentCoords.y.toFixed(3)},
+                 Z: {currentCoords.z.toFixed(3)}
+                </>
+         )}
+        </div>
+    </div>
  );
 };
 
@@ -395,39 +512,50 @@ const LatentSpaceVisualizer = () => {
 
   // Debounce fetching image to avoid excessive API calls
   useEffect(() => {
-    if (!coords) return;
+    if (!coords) {
+        // If coords become null (e.g., mouse leave), clear the image display immediately
+         const event = new CustomEvent('latentImageUpdate', { detail: { imageUrl: null, isLoading: false, error: null, coords: null } });
+         window.dispatchEvent(event);
+         setImageUrl(null); // Also update local state if needed
+         setIsLoading(false);
+         setError(null);
+        return;
+    }
 
     setIsLoading(true);
     setError(null);
+    // Dispatch loading state immediately
+    const loadingEvent = new CustomEvent('latentImageUpdate', { detail: { imageUrl, isLoading: true, error: null, coords } });
+    window.dispatchEvent(loadingEvent);
+
+
     const timer = setTimeout(async () => {
       try {
-        // For 3D, we might only use x and y for the placeholder image service
+        // Use all available coordinates for the seed
         const x = coords.x;
         const y = coords.y;
-        const url = await getPlaceholderImage(x, y, imageDimensions);
+        const z = coords.z; // Use z if available
+        const url = await getPlaceholderImage(x, y, z, imageDimensions);
         setImageUrl(url);
+         // Dispatch success state
+         const successEvent = new CustomEvent('latentImageUpdate', { detail: { imageUrl: url, isLoading: false, error: null, coords } });
+         window.dispatchEvent(successEvent);
       } catch (err) {
         console.error("Error fetching placeholder image:", err);
         setError("Failed to load image.");
         setImageUrl(null); // Clear image on error
+        // Dispatch error state
+        const errorEvent = new CustomEvent('latentImageUpdate', { detail: { imageUrl: null, isLoading: false, error: "Failed to load image.", coords } });
+        window.dispatchEvent(errorEvent);
       } finally {
-        setIsLoading(false);
+        setIsLoading(false); // Ensure loading is set to false
       }
-    }, 100); // Debounce time in ms
+    }, 150); // Slightly longer debounce for smoother experience with potentially slower generation
 
     return () => clearTimeout(timer);
   }, [coords]); // Re-run effect when coords change
 
-  // Send image URL to the RenderedImageView component (using custom event or state management)
-   useEffect(() => {
-    if (imageUrl) {
-      const event = new CustomEvent('latentImageUpdate', { detail: { imageUrl, isLoading, error, coords } });
-      window.dispatchEvent(event);
-    } else if(isLoading || error || !coords){
-         const event = new CustomEvent('latentImageUpdate', { detail: { imageUrl: null, isLoading, error, coords } });
-         window.dispatchEvent(event);
-    }
-  }, [imageUrl, isLoading, error, coords]);
+  // Removed the second useEffect that dispatches events, as it's now handled within the first useEffect.
 
 
   return (
@@ -436,23 +564,15 @@ const LatentSpaceVisualizer = () => {
         <TabsTrigger value="2d">2D View</TabsTrigger>
         <TabsTrigger value="3d">3D View</TabsTrigger>
       </TabsList>
-      <TabsContent value="2d" className="w-full flex-1 flex justify-center items-center p-0">
-        <LatentSpace2D setCoords={(c) => setCoords({ x: c.x, y: c.y })} />
+      <TabsContent value="2d" className="w-full flex-1 flex justify-center items-start p-0"> {/* Align items start */}
+        <LatentSpace2D setCoords={(c) => setCoords({ x: c.x, y: c.y, z: coords?.z })} />
       </TabsContent>
-      <TabsContent value="3d" className="w-full flex-1 flex justify-center items-center p-0">
-         <Suspense fallback={<div className="text-center">Loading 3D View...</div>}>
+      <TabsContent value="3d" className="w-full flex-1 flex justify-center items-start p-0"> {/* Align items start */}
+         <Suspense fallback={<div className="text-center p-10">Loading 3D View...</div>}>
              <LatentSpace3D setCoords={(c) => setCoords(c)} />
          </Suspense>
       </TabsContent>
-       {/* Display current coordinates */}
-        {coords && (
-            <div className="mt-2 text-xs text-muted-foreground font-mono">
-             Coords:
-             X: {coords.x.toFixed(3)},
-             Y: {coords.y.toFixed(3)}
-             {coords.z !== undefined && `, Z: ${coords.z.toFixed(3)}`}
-            </div>
-        )}
+       {/* Coords display is now inside 2D/3D components */}
     </Tabs>
   );
 };
