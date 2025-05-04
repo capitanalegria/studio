@@ -6,13 +6,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize, Lock } from 'lucide-react'; // Added Lock
 import Image from 'next/image';
 import { getPlaceholderImage, ImageDimensions } from '@/services/image-rendering';
 import * as THREE from 'three';
+import { cn } from '@/lib/utils'; // Import cn utility
 
 // --- 2D View ---
-const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: number }) => void }) => {
+const LatentSpace2D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: number; y: number }) => void, isEnabled: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -21,7 +22,7 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
 
 
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!containerRef.current || !isHovering) return;
+    if (!containerRef.current || !isHovering || !isEnabled) return; // Check if enabled
 
     const rect = containerRef.current.getBoundingClientRect();
     const containerSize = Math.min(rect.width, rect.height); // Use smallest dimension for square aspect ratio
@@ -49,6 +50,7 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+      if (!isEnabled) return; // Check if enabled
       event.preventDefault();
       const zoomFactor = 0.1;
       const newZoom = zoom * (1 - event.deltaY * zoomFactor * 0.1); // Adjust sensitivity
@@ -58,6 +60,7 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
    // Basic drag-to-pan functionality (optional)
     const dragStartRef = useRef<{ x: number; y: number } | null>(null);
     const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+        if (!isEnabled) return; // Check if enabled
         dragStartRef.current = { x: event.clientX, y: event.clientY };
     };
     const handleMouseUp = () => {
@@ -69,7 +72,7 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
         setCurrentCoords(null); // Clear coords display when leaving
     };
      const handleDrag = (event: React.MouseEvent<HTMLDivElement>) => {
-        if (!dragStartRef.current || !containerRef.current) return;
+        if (!dragStartRef.current || !containerRef.current || !isEnabled) return; // Check if enabled
 
         const dx = event.clientX - dragStartRef.current.x;
         const dy = event.clientY - dragStartRef.current.y;
@@ -91,18 +94,31 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
     <div className="flex flex-col items-center w-full h-full">
         <div
             ref={containerRef}
-            className="relative w-full h-full aspect-square max-w-[500px] max-h-[500px] bg-secondary rounded-lg overflow-hidden cursor-crosshair latent-space-bg"
-            onMouseEnter={() => setIsHovering(true)}
+            className={cn(
+                "relative w-full h-full aspect-square max-w-[500px] max-h-[500px] bg-secondary rounded-lg overflow-hidden latent-space-bg",
+                isEnabled ? "cursor-crosshair" : "cursor-not-allowed" // Change cursor based on isEnabled
+            )}
+            onMouseEnter={() => isEnabled && setIsHovering(true)} // Only set hover if enabled
             onMouseLeave={handleMouseLeave}
-            onMouseMove={isHovering ? handleMouseMove : undefined}
-            onWheel={handleWheel}
-            onMouseDown={handleMouseDown}
-            onMouseUp={handleMouseUp}
-            onMouseMoveCapture={dragStartRef.current ? handleDrag : undefined} // Use capture phase for dragging
+            onMouseMove={isHovering && isEnabled ? handleMouseMove : undefined} // Only handle if hovering and enabled
+            onWheel={isEnabled ? handleWheel : undefined} // Only handle if enabled
+            onMouseDown={isEnabled ? handleMouseDown : undefined} // Only handle if enabled
+            onMouseUp={handleMouseUp} // Always handle mouse up to stop drag state
+            onMouseMoveCapture={dragStartRef.current && isEnabled ? handleDrag : undefined} // Only drag if enabled
         >
+           {/* Overlay when disabled */}
+            {!isEnabled && (
+                <div className="absolute inset-0 bg-background/70 flex flex-col items-center justify-center z-10 rounded-lg backdrop-blur-sm">
+                    <Lock className="w-8 h-8 text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">Load model data to enable interaction</p>
+                </div>
+            )}
             {/* Placeholder for scaled distribution visualization */}
             <div
-                className="absolute inset-0 transition-transform duration-100 ease-out pointer-events-none" // Faster transition, disable pointer events
+                className={cn(
+                    "absolute inset-0 transition-transform duration-100 ease-out pointer-events-none", // Faster transition, disable pointer events
+                    !isEnabled && "opacity-30" // Dim visualization when disabled
+                )}
                  style={{
                      transform: `scale(${zoom}) translate(${offset.x * 50}%, ${offset.y * 50}%)`, // Adjust translation based on offset and zoom
                      transformOrigin: 'center center', // Zoom from the center
@@ -128,21 +144,21 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
             </div>
 
             {/* Zoom Controls */}
-            <div className="absolute bottom-2 right-2 flex flex-col gap-1">
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(10, z * 1.2))}>
+            <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-20"> {/* Ensure controls are above disabled overlay */}
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(10, z * 1.2))} disabled={!isEnabled}>
                     <ZoomIn className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(0.1, z / 1.2))}>
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(0.1, z / 1.2))} disabled={!isEnabled}>
                     <ZoomOut className="h-4 w-4" />
                 </Button>
-                 <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}>
+                 <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }} disabled={!isEnabled}>
                     <Maximize className="h-4 w-4" /> {/* Reset zoom/pan */}
                 </Button>
             </div>
         </div>
         {/* Display current coordinates */}
         <div className="mt-2 text-xs text-muted-foreground font-mono h-4"> {/* Fixed height */}
-         {currentCoords && (
+         {currentCoords && isEnabled && ( // Only show coords if enabled and available
              <>
              X: {currentCoords.x.toFixed(3)}, Y: {currentCoords.y.toFixed(3)}
              </>
@@ -154,18 +170,19 @@ const LatentSpace2D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
 
 
 // --- 3D View ---
-const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: number; z: number }) => void }) => {
+const LatentSpace3D = ({ setCoords, isEnabled }: { setCoords: (coords: { x: number; y: number; z: number }) => void, isEnabled: boolean }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const cubeRef = useRef<THREE.Mesh | null>(null);
+  const linesRef = useRef<THREE.LineSegments | null>(null); // Ref for lines
   const pointerRef = useRef<THREE.Mesh | null>(null); // For visualizing the intersection point
   const controlsRef = useRef<any>(null); // For OrbitControls or custom controls
 
   // State for 3D interaction (zoom, rotation, pointer position)
   const [zoom, setZoom] = useState(5); // Initial distance
-  const [rotation, setRotation] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState({ x: 0, y: 0 }); // We still store rotation state
   const [pointer3D, setPointer3D] = useState<{ x: number; y: number; z: number } | null>(null);
   const [currentCoords, setCurrentCoords] = useState<{ x: number; y: number; z: number } | null>(null); // Local state for display
 
@@ -210,12 +227,17 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
         const cube = new THREE.Mesh(geometry, material);
         scene.add(cube);
         cubeRef.current = cube;
+        // Restore rotation from state if needed (e.g., on component re-mount)
+        cube.rotation.set(rotation.x, rotation.y, 0); // Apply initial rotation from state
+
 
         // --- Edges ---
         const edges = new THREE.EdgesGeometry(geometry);
         const lineMaterial = new THREE.LineBasicMaterial({ color: 0x008080, linewidth: 1.5 }); // Teal edges, slightly thicker
         const lineSegments = new THREE.LineSegments(edges, lineMaterial);
         scene.add(lineSegments);
+        linesRef.current = lineSegments; // Store ref for lines
+        lineSegments.rotation.copy(cube.rotation); // Sync initial line rotation
 
 
         // --- Pointer Sphere ---
@@ -242,13 +264,15 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
         let previousMousePosition = { x: 0, y: 0 };
 
         const onMouseDown = (event: MouseEvent) => {
+            if (!isEnabled) return; // Check if enabled
             isDragging = true;
             previousMousePosition = { x: event.clientX, y: event.clientY };
             currentMountRef.style.cursor = 'grabbing';
         };
 
         const onMouseMove = (event: MouseEvent) => {
-            if (!isDragging || !cubeRef.current || !lineSegments) return;
+            // Only rotate if dragging AND enabled
+            if (!isDragging || !cubeRef.current || !linesRef.current || !isEnabled) return;
 
             const deltaMove = {
                 x: event.clientX - previousMousePosition.x,
@@ -265,13 +289,14 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
                     'XYZ' // Use 'XYZ' order
                 ));
 
+            // Apply the rotation delta to the current quaternion
             cube.quaternion.multiplyQuaternions(deltaRotationQuaternion, cube.quaternion);
-            lineSegments.quaternion.copy(cube.quaternion); // Sync line rotation
+            linesRef.current.quaternion.copy(cube.quaternion); // Sync line rotation
 
-            // Update state rotation (might need adjustment if using quaternions directly)
-            // For simplicity, we can still update Euler angles for state, though it might lead to gimbal lock issues visually
+
+            // Update state rotation based on the new quaternion
             const euler = new THREE.Euler().setFromQuaternion(cube.quaternion, 'XYZ');
-            setRotation({ x: euler.x, y: euler.y });
+            setRotation({ x: euler.x, y: euler.y }); // Update the React state
 
 
             previousMousePosition = { x: event.clientX, y: event.clientY };
@@ -280,13 +305,13 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
         const onMouseUp = () => {
             if (isDragging) {
                 isDragging = false;
-                currentMountRef.style.cursor = 'grab';
+                currentMountRef.style.cursor = isEnabled ? 'grab' : 'not-allowed'; // Adjust cursor based on enabled state
             }
         };
          const onMouseLeave = () => {
              if (isDragging) {
                  isDragging = false;
-                 currentMountRef.style.cursor = 'grab'; // Reset cursor even if dragging stops outside
+                 currentMountRef.style.cursor = isEnabled ? 'grab' : 'not-allowed'; // Adjust cursor
              }
               if (pointerRef.current) pointerRef.current.visible = false;
              setCurrentCoords(null); // Clear coords display
@@ -294,6 +319,7 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
 
         // --- Interaction (Mouse Wheel for Zoom) ---
         const onWheel = (event: WheelEvent) => {
+            if (!isEnabled) return; // Check if enabled
             event.preventDefault();
             const zoomSpeed = 0.1; // Reduced sensitivity
             const newZoom = Math.max(2, Math.min(15, camera.position.z + event.deltaY * zoomSpeed)); // Adjusted min/max zoom
@@ -306,9 +332,10 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
         const mouse = new THREE.Vector2();
 
         const onPointerMove = (event: PointerEvent) => {
-             if (!currentMountRef || !cameraRef.current || !cubeRef.current || !pointerRef.current || isDragging) {
+             // Only raycast if enabled and not dragging
+             if (!currentMountRef || !cameraRef.current || !cubeRef.current || !pointerRef.current || isDragging || !isEnabled) {
                  if(pointerRef.current) pointerRef.current.visible = false;
-                 setCurrentCoords(null); // Hide pointer and clear coords if dragging
+                 setCurrentCoords(null); // Hide pointer and clear coords
                  return
              };
 
@@ -419,47 +446,47 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
              if (sceneRef.current) {
                 // Dispose geometries, materials, textures in the scene
                  sceneRef.current.traverse((object) => {
-                    if (object instanceof THREE.Mesh) {
+                    if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
                         if (object.geometry) object.geometry.dispose();
-                        if (object.material) {
-                             if (Array.isArray(object.material)) {
-                                object.material.forEach(material => material.dispose());
-                             } else {
-                                object.material.dispose();
-                             }
-                        }
+                         if (object.material) {
+                             const materials = Array.isArray(object.material) ? object.material : [object.material];
+                             materials.forEach(material => material.dispose());
+                         }
                     }
                  });
                 sceneRef.current = null;
             }
             cameraRef.current = null;
             cubeRef.current = null;
+            linesRef.current = null; // Clean up lines ref
             pointerRef.current = null;
         };
-    }, [zoom, setCoords]); // Add setCoords dependency
+        // Removed setCoords from dependency array as it's not needed and caused potential issues.
+        // Added rotation and isEnabled to dependencies to correctly re-apply rotation if state changes.
+    }, [zoom, rotation, isEnabled]);
 
 
    const resetView = () => {
+        if (!isEnabled) return; // Only allow reset if enabled
         setZoom(5);
-        setRotation({ x: 0, y: 0 });
+        setRotation({ x: 0, y: 0 }); // Reset React state for rotation
 
+        // Reset Three.js object rotations directly
          if (cubeRef.current) {
-            cubeRef.current.rotation.set(0, 0, 0);
-            cubeRef.current.quaternion.set(0, 0, 0, 1); // Reset quaternion as well
+             cubeRef.current.rotation.set(0, 0, 0);
+             cubeRef.current.quaternion.set(0, 0, 0, 1); // Reset quaternion
+         }
+         if (linesRef.current) { // Reset lines rotation
+             linesRef.current.rotation.set(0, 0, 0);
+             linesRef.current.quaternion.set(0, 0, 0, 1);
+         }
 
-             // Find the line segments and reset its rotation too
-            const lineSegments = sceneRef.current?.children.find(child => child instanceof THREE.LineSegments);
-            if (lineSegments instanceof THREE.LineSegments) {
-                lineSegments.rotation.set(0, 0, 0);
-                 lineSegments.quaternion.set(0, 0, 0, 1);
-            }
-        }
         if (cameraRef.current) {
             cameraRef.current.position.set(0, 0, 5); // Reset position
             cameraRef.current.lookAt(0, 0, 0); // Ensure it looks at the center
             cameraRef.current.updateProjectionMatrix();
         }
-         // Force re-render if needed, though state updates should handle it
+         // Force re-render if needed
          if (rendererRef.current && sceneRef.current && cameraRef.current) {
             rendererRef.current.render(sceneRef.current, cameraRef.current);
         }
@@ -467,28 +494,34 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
 
   return (
     <div className="flex flex-col items-center w-full h-full">
-        <div className="relative w-full h-full aspect-square max-w-[500px] max-h-[500px] rounded-lg overflow-hidden cursor-grab bg-secondary">
-            <div ref={mountRef} className="w-full h-full" />
-            {/* Placeholder for Leap Motion status/controls */}
-            {/* <div className="absolute top-2 left-2 bg-background/80 text-foreground text-xs px-2 py-1 rounded">
-                Leap Motion: Disconnected (Placeholder)
-            </div> */}
+        <div className={cn(
+            "relative w-full h-full aspect-square max-w-[500px] max-h-[500px] rounded-lg overflow-hidden bg-secondary",
+            isEnabled ? 'cursor-grab' : 'cursor-not-allowed' // Dynamic cursor
+        )}>
+            <div ref={mountRef} className={cn("w-full h-full", !isEnabled && "opacity-50")} />
+             {/* Overlay when disabled */}
+            {!isEnabled && (
+                <div className="absolute inset-0 bg-background/70 flex flex-col items-center justify-center z-10 rounded-lg backdrop-blur-sm">
+                    <Lock className="w-8 h-8 text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">Load model data to enable interaction</p>
+                </div>
+            )}
             {/* Reset View Button */}
-            <div className="absolute bottom-2 right-2 flex flex-col gap-1">
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={resetView} title="Reset View">
+            <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-20"> {/* Ensure controls are above disabled overlay */}
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={resetView} title="Reset View" disabled={!isEnabled}>
                     <RotateCcw className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(15, z + 1))} title="Zoom Out">
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.min(15, z + 1))} title="Zoom Out" disabled={!isEnabled}>
                     <ZoomOut className="h-4 w-4" /> {/* Zoom out = Increase distance */}
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(2, z - 1))} title="Zoom In">
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80 hover:bg-accent" onClick={() => setZoom(z => Math.max(2, z - 1))} title="Zoom In" disabled={!isEnabled}>
                     <ZoomIn className="h-4 w-4" /> {/* Zoom in = Decrease distance */}
                 </Button>
             </div>
         </div>
         {/* Display current coordinates */}
         <div className="mt-2 text-xs text-muted-foreground font-mono h-4"> {/* Fixed height */}
-         {currentCoords && (
+         {currentCoords && isEnabled && ( // Only show coords if enabled and available
                 <>
                  X: {currentCoords.x.toFixed(3)},
                  Y: {currentCoords.y.toFixed(3)},
@@ -502,7 +535,7 @@ const LatentSpace3D = ({ setCoords }: { setCoords: (coords: { x: number; y: numb
 
 
 // --- Main Visualizer Component ---
-const LatentSpaceVisualizer = () => {
+const LatentSpaceVisualizer = ({ isEnabled }: { isEnabled: boolean }) => { // Receive isEnabled prop
   const [coords, setCoords] = useState<{ x: number; y: number; z?: number } | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -510,13 +543,19 @@ const LatentSpaceVisualizer = () => {
 
   const imageDimensions: ImageDimensions = { width: 300, height: 300 }; // Desired output size
 
+  const handleSetCoords = (newCoords: { x: number; y: number; z?: number }) => {
+     if (!isEnabled) return; // Prevent setting coords if not enabled
+     setCoords(newCoords);
+  }
+
   // Debounce fetching image to avoid excessive API calls
   useEffect(() => {
-    if (!coords) {
-        // If coords become null (e.g., mouse leave), clear the image display immediately
+     // Only fetch if enabled and coords are set
+    if (!isEnabled || !coords) {
+         // Clear the image display immediately if not enabled or no coords
          const event = new CustomEvent('latentImageUpdate', { detail: { imageUrl: null, isLoading: false, error: null, coords: null } });
          window.dispatchEvent(event);
-         setImageUrl(null); // Also update local state if needed
+         setImageUrl(null);
          setIsLoading(false);
          setError(null);
         return;
@@ -553,7 +592,8 @@ const LatentSpaceVisualizer = () => {
     }, 150); // Slightly longer debounce for smoother experience with potentially slower generation
 
     return () => clearTimeout(timer);
-  }, [coords]); // Re-run effect when coords change
+     // Depend on isEnabled and coords
+  }, [coords, isEnabled, imageUrl]); // Added imageUrl to deps based on eslint hint, review if necessary
 
   // Removed the second useEffect that dispatches events, as it's now handled within the first useEffect.
 
@@ -561,15 +601,15 @@ const LatentSpaceVisualizer = () => {
   return (
     <Tabs defaultValue="2d" className="w-full h-full flex flex-col items-center">
       <TabsList className="mb-4">
-        <TabsTrigger value="2d">2D View</TabsTrigger>
-        <TabsTrigger value="3d">3D View</TabsTrigger>
+        <TabsTrigger value="2d" disabled={!isEnabled}>2D View</TabsTrigger> {/* Disable tabs if not enabled */}
+        <TabsTrigger value="3d" disabled={!isEnabled}>3D View</TabsTrigger> {/* Disable tabs if not enabled */}
       </TabsList>
       <TabsContent value="2d" className="w-full flex-1 flex justify-center items-start p-0"> {/* Align items start */}
-        <LatentSpace2D setCoords={(c) => setCoords({ x: c.x, y: c.y, z: coords?.z })} />
+        <LatentSpace2D setCoords={(c) => handleSetCoords({ x: c.x, y: c.y, z: coords?.z })} isEnabled={isEnabled} />
       </TabsContent>
       <TabsContent value="3d" className="w-full flex-1 flex justify-center items-start p-0"> {/* Align items start */}
          <Suspense fallback={<div className="text-center p-10">Loading 3D View...</div>}>
-             <LatentSpace3D setCoords={(c) => setCoords(c)} />
+             <LatentSpace3D setCoords={handleSetCoords} isEnabled={isEnabled} />
          </Suspense>
       </TabsContent>
        {/* Coords display is now inside 2D/3D components */}
