@@ -17,7 +17,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning> {/* Force dark mode and suppress minor warnings if needed */}
+    <html lang="en" className="dark" suppressHydrationWarning>
+      {/* Head is implicitly added by Next.js unless a custom one is defined */}
       <body
         className={cn(
           "min-h-screen bg-background font-sans antialiased",
